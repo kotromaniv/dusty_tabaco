@@ -53,17 +53,44 @@ const buddy=t=>`<div class=bd>${MS}<div class=bub>${t}</div></div>`;
 const seed=()=>({items:[['leafd','🍂','Висушене тютюнове листя',500,2,0,'Сушарня'],['paper','📄','Папір',100,5,0,'Магазин'],['ink','🖋️','Чорнило',100,8,0,'Магазин'],['sugar','🍬','Цукор',100,3,0,'Магазин'],['sap','🪵','Деревний сік',100,4,0,'Ліс'],['leaf','🌿','Тютюнове листя',100,2,0,'Ферма'],['sulfur','🟡','Сірка',50,6,0,'Шахта'],['beam','🪵','Брус',50,7,0,'Лісопилка'],
 ['cheap','🚬','Блок дешевих цигарок',0,0,600,''],['prem','💎','Блок преміальних цигарок',0,0,1500,''],['chew','🟤','Блок жувального тютюну',0,0,400,''],['cigar','🪘','Коробка сигар',0,0,700,''],['match','🔥','Блок сірників',0,0,350,''],['smoke','🍃','Курильний тютюн',0,0,3,'']].map(a=>({id:a[0],e:a[1],n:a[2],q:a[3],p:a[4],s:a[5],w:a[6]})),
 recipes:[['cheap','🚬','Цигарки',1,1800,5,1,[['leafd',150],['paper',5],['ink',5]]],['prem','💎','Цигарки',2,1800,7,1,[['leafd',300],['paper',10],['ink',20]]],['chew','🟤','Жувальний тютюн',1,900,3,1,[['leafd',100],['sugar',20],['sap',20]]],['cigar','🪘','Цигарки',3,900,10,1,[['leafd',100],['leaf',20],['paper',10]]],['match','🔥','Сірники',1,1800,1,1,[['sulfur',5],['beam',5],['paper',25]]],['smoke','🍃','Тютюн',1,180,0,50,[['leafd',100]]]].map(a=>({id:a[0],e:a[1],cat:a[2],sk:a[3],t:a[4],xp:a[5],out:a[6],ing:a[7]})),crafts:[],notes:'Правила, контакти, постачальники...',cfg:{}});
-let D;try{D=JSON.parse(localStorage.ul)}catch(e){}D=D||seed();let adm=sessionStorage.adm=='1';
+function normalizeState(raw){
+ const base=seed(),src=raw&&typeof raw==='object'?raw:{};
+ const baseItems=new Map(base.items.map(i=>[i.id,i]));
+ const items=(Array.isArray(src.items)?src.items:base.items).filter(i=>i&&typeof i==='object'&&i.id).map(i=>{
+  const b=baseItems.get(i.id)||{};
+  return {...b,...i,id:String(i.id),e:i.e??b.e??'📦',n:i.n??b.n??'Без назви',
+   q:Number.isFinite(Number(i.q))?Number(i.q):0,p:Number.isFinite(Number(i.p))?Number(i.p):0,
+   s:Number.isFinite(Number(i.s))?Number(i.s):0,w:typeof i.w==='string'?i.w:''};
+ });
+ const baseRecipes=new Map(base.recipes.map(r=>[r.id,r]));
+ const recipes=(Array.isArray(src.recipes)?src.recipes:base.recipes).filter(r=>r&&typeof r==='object'&&r.id).map(r=>{
+  const b=baseRecipes.get(r.id)||{};
+  const ing=Array.isArray(r.ing)?r.ing.filter(x=>Array.isArray(x)&&x.length>=2&&x[0]!=null&&Number.isFinite(Number(x[1]))&&Number(x[1])>0).map(x=>[String(x[0]),Number(x[1])]):(Array.isArray(b.ing)?b.ing:[]);
+  return {...b,...r,id:String(r.id),e:r.e??b.e??'📦',cat:r.cat??b.cat??'Інше',
+   sk:Number(r.sk)||0,t:Math.max(0,Number(r.t)||0),xp:Number(r.xp)||0,
+   out:Math.max(1,Number(r.out)||1),ing};
+ });
+ const crafts=(Array.isArray(src.crafts)?src.crafts:[]).filter(c=>c&&typeof c==='object'&&c.id).map(c=>({...c,
+  id:String(c.id),rid:String(c.rid||''),cy:Math.max(1,Number(c.cy)||1),
+  st:Number(c.st)||0,end:Number(c.end)||0,col:c.col?1:0
+ }));
+ return {...base,...src,items,recipes,crafts,
+  notes:typeof src.notes==='string'?src.notes:base.notes,
+  cfg:src.cfg&&typeof src.cfg==='object'?src.cfg:{},
+ };
+}
+let D;try{D=normalizeState(JSON.parse(localStorage.ul))}catch(e){D=normalizeState(seed())}
+let adm=sessionStorage.adm=='1';
 const I=id=>D.items.find(i=>i.id==id)||{n:'?',e:'❓',p:0,q:0,s:0,w:''},R=id=>D.recipes.find(r=>r.id==id),CO=['#9bbf8a','#b49be0','#e3a857','#d98aa3','#7fb5d6','#d9c7a0'];
-const cost=r=>r.ing.reduce((s,[i,q])=>s+q*I(i).p,0),unit=r=>cost(r)/r.out,sp=r=>I(r.id).s||0,mg=r=>sp(r)?(sp(r)-unit(r))/sp(r)*100:0,ph=r=>(sp(r)*r.out-cost(r))/(r.t/3600),can=r=>Math.min(...r.ing.map(([i,q])=>Math.floor(I(i).q/q)));
+const cost=r=>(Array.isArray(r&&r.ing)?r.ing:[]).reduce((s,a)=>s+(Array.isArray(a)?(Number(a[1])||0)*I(a[0]).p:0),0),unit=r=>cost(r)/(Number(r&&r.out)||1),sp=r=>I(r.id).s||0,mg=r=>sp(r)?(sp(r)-unit(r))/sp(r)*100:0,ph=r=>(sp(r)* (Number(r&&r.out)||1)-cost(r))/((Number(r&&r.t)||0)/3600||1),can=r=>{const ing=Array.isArray(r&&r.ing)?r.ing:[];return ing.length?Math.min(...ing.map(([i,q])=>Math.floor(I(i).q/q))):0};
 const act=()=>D.crafts.filter(c=>!c.col),H0=s=>[...s].reduce((a,c)=>(a*31+c.charCodeAt(0))|0,7)+'';
 function say(){const rd=act().find(c=>c.end<=Date.now());if(rd)return'Крафт готовий. Забирай, поки не охолов 📦';for(const r of D.recipes)for(const[i,q]of r.ing)if(I(i).q<q)return`На «${I(r.id).n}» бракує «${I(i).n}». Докупи, бро 🛒`;const b=[...D.recipes].sort((a,b)=>ph(b)-ph(a))[0];return b?`Найвигідніше за годину: ${b.e} ${I(b.id).n}, ${$$(ph(b))}/год. Варимо?`:'Додай рецепти, і я порахую все сам'}
 let to;function save(){localStorage.ul=JSON.stringify(D);clearTimeout(to);to=setTimeout(()=>post({action:'save',data:{...D,cfg:undefined}}),1500)}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2400)}
-async function post(o){if(!D.cfg.url)return;try{const j=await(await fetch(D.cfg.url,{method:'POST',body:JSON.stringify({...o,key:D.cfg.key})})).json();if(j.crafts)recon(j.crafts);return j}catch(e){toast('Sync ✗')}}
-async function pull(full){if(!D.cfg.url)return;try{const j=await(await fetch(D.cfg.url+'?key='+encodeURIComponent(D.cfg.key))).json();if(full&&j.state){D={...j.state,cfg:D.cfg};localStorage.ul=JSON.stringify(D);tab(cur);toast('Завантажено з Google Sheets')}recon(j.crafts||[])}catch(e){toast('Sync ✗')}}
-function recon(sc){let ch=0;D.crafts.forEach(c=>{const s=sc.find(x=>x.id==c.id);if(s&&s.collected&&!c.col){take(c.id,1);ch=1}});if(ch)tab(cur)}
-function take(id,rm){const c=D.crafts.find(x=>x.id==id);if(!c||c.col)return;const r=R(c.rid);c.col=1;I(r.id).q+=r.out*c.cy;localStorage.ul=JSON.stringify(D);if(!rm){post({action:'collect',id});toast('Забрано на склад 🌿');tab(cur)}}
+async function post(o){if(!D.cfg||!D.cfg.url)return;try{const response=await fetch(D.cfg.url,{method:'POST',body:JSON.stringify({...o,key:D.cfg.key})});const j=await response.json();if(j&&Array.isArray(j.crafts))recon(j.crafts);return j}catch(e){toast('Sync ✗')}}
+async function pull(full){if(!D.cfg||!D.cfg.url)return;try{const response=await fetch(D.cfg.url+'?key='+encodeURIComponent(D.cfg.key||''));const j=await response.json();if(full&&j&&j.state){D=normalizeState({...j.state,cfg:D.cfg});localStorage.ul=JSON.stringify(D);tab(cur);toast('Завантажено з Google Sheets')}recon(j&&Array.isArray(j.crafts)?j.crafts:[])}catch(e){toast('Sync ✗')}}
+function recon(sc){if(!Array.isArray(sc))return;let ch=0;D.crafts.forEach(c=>{const s=sc.find(x=>x&&x.id==c.id);if(s&&s.collected&&!c.col){take(c.id,1);ch=1}});if(ch)tab(cur)}
+function take(id,rm){const c=D.crafts.find(x=>x.id==id);if(!c||c.col)return;const r=R(c.rid);if(!r)return toast('Рецепт цього крафту не знайдено');c.col=1;I(r.id).q+=r.out*c.cy;localStorage.ul=JSON.stringify(D);if(!rm){post({action:'collect',id});toast('Забрано на склад 🌿');tab(cur)}}
 function go(rid,cy){const r=R(rid);if(r.ing.some(([i,q])=>I(i).q<q*cy))return toast('Не вистачає сировини');r.ing.forEach(([i,q])=>I(i).q-=q*cy);const n=Date.now(),c={id:'c'+n,rid,cy,st:n,end:n+r.t*1000*cy,col:0};D.crafts.push(c);save();post({action:'craft',id:c.id,name:I(r.id).n+' ×'+cy*r.out,emoji:r.e,qty:cy*r.out,end:c.end});toast('Крафт запущено ⚡');tab('crafts')}
 /* адмін-режим: PIN (захист від випадкових правок, зберігається у синхронізованих даних) */
 function lock(){if(adm){adm=0;sessionStorage.adm=0;toast('Адмін-режим вимкнено');return tab(cur)}if(!D.pin){const p=prompt('Створи PIN адміна. Він потрібен, щоб редагувати склад і «Де брати»:');if(!p)return;D.pin=H0(p);save()}else if(H0(prompt('PIN адміна:')||'')!==D.pin)return toast('Невірний PIN');adm=1;sessionStorage.adm=1;toast('Адмін-режим увімкнено 🔓');tab(cur)}
@@ -87,14 +114,14 @@ function up(id,k,v){I(id)[k]=['q','p','s'].includes(k)?+v:v;save()}function del(
 function addI(){$('#ri').insertAdjacentHTML('beforeend',`<div style="display:flex;gap:8px;margin-bottom:8px"><select style="flex:1">${M(D.items,i=>`<option value=${i.id}>${i.e} ${i.n}</option>`)}</select><input type=number style="width:90px" value=1></div>`)}
 function mk(){const n=$('#rn').value.trim(),[m,s]=$('#rt').value.split(':').map(Number),ing=[...$('#ri').children].map(d=>[d.children[0].value,+d.children[1].value]);if(!n||!ing.length)return toast('Вкажіть назву та інгредієнти');const id='r'+Date.now();D.items.push({id,e:$('#re').value,n,q:0,p:0,s:0,w:''});D.recipes.push({id,e:$('#re').value,cat:$('#rc').value,sk:+$('#rk').value,t:(m||0)*60+(s||0),xp:+$('#rx').value,out:+$('#ro').value||1,ing});save();tab('rec');toast('Рецепт створено')}
 function ex(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(D,null,1)],{type:'application/json'}));a.download='config.api';a.click()}
-function im(fl){const r=new FileReader();r.onload=()=>{try{D=JSON.parse(r.result);save();tab('sync');toast('Імпортовано ✔')}catch(e){toast('Невірний файл')}};r.readAsText(fl)}
+function im(fl){if(!fl)return;const r=new FileReader();r.onload=()=>{try{D=normalizeState(JSON.parse(r.result));save();tab('sync');toast('Імпортовано ✔')}catch(e){toast('Невірний файл')}};r.readAsText(fl)}
 function calcR(){const r=R(C.rid);if(!r)return;const cy=Math.ceil(C.q/r.out)||0,u=cy*r.out,raw=cy*cost(r),rec=unit(r)*(1+C.mk/100),dump=C.min&&rec<C.min,pr=Math.max(rec,C.min),rev=u*pr,pf=rev-raw,mgn=rev?pf/rev*100:0,tm=cy*r.t;
 const need=r.ing.map(([i,q])=>({id:i,i:I(i),n:q*cy})),short=need.reduce((s,x)=>s+Math.max(0,x.n-x.i.q)*x.i.p,0),ok=!need.some(x=>x.n>x.i.q);
 $('#res').innerHTML=`<div class=pn>${buddy(dump?'Стоп. Рекомендована ціна нижча за мінімум сервера, це демпінг 🚫':!ok?'Сировини не вистачає. Подивись список нижче 🛒':pf<=0?'Тут ми в мінусі. Підніми націнку 📈':'Усе чисто, можна варити 😎')}</div>
 <div class=k><div><b>${cy}</b><span>циклів → ${u} шт</span></div><div class=w><b>${$$(raw)}</b><span>Сировина партії</span></div><div><b>${$$(rev)}</b><span>Виручка по ${$$(pr)}/шт</span></div><div class="${pf>0?'ok':'bad'}"><b>${$$(pf)}</b><span>Чистий прибуток</span></div><div><b>${f(mgn)}%</b><span>Маржинальність</span></div><div class=w><b>${T(tm)}</b><span>${$$(tm?pf/(tm/3600):0)}/год · ${cy*r.xp} Exp</span></div></div>
 <div class="${dump?'warn':'good'}">${dump?`🚨 Демпінг! Рекомендована ціна ${$$(rec)} нижча за мінімум ${$$(C.min)}. Продаємо за мінімум.`:`✅ Ціна ${$$(rec)}/шт (собівартість ${$$(unit(r))} + ${C.mk}%) безпечна.`}</div>${C.mkt&&pr>C.mkt?`<div class=warn>⚠ Ціна вища за ринкову ${$$(C.mkt)}, продаж може бути повільним. За ринковою ціною маржа буде ${f((C.mkt-unit(r))/C.mkt*100)}%.</div>`:''}
 <div class=pn><h3>📦 Потрібна сировина</h3>${M(need,x=>`<div class=row style="cursor:pointer;color:${x.n>x.i.q?'var(--bad)':'var(--sg)'}" onclick="info('${x.id}')"><span>${x.i.e} ${x.i.n}</span><span>треба ${f(x.n)} / є ${f(x.i.q)} ${x.n>x.i.q?`(докупити ${f(x.n-x.i.q)} ≈ ${$$((x.n-x.i.q)*x.i.p)})`:'✔'}</span></div>`)}${short?`<div class=warn>Докупівля: ${$$(short)}</div>`:''}<button class=go style="margin-top:12px" ${ok&&cy?'':'disabled'} onclick="go('${r.id}',${cy})">🔥 Запустити крафт (${cy} цикл.)</button></div>`}
-function graph(id){$('#dr').classList.remove('on');document.querySelectorAll('.mod').forEach(m=>m.remove());const r=R(id),tc=cost(r);const d=document.createElement('div');d.className='mod';d.innerHTML=`<div><button class=go onclick="this.closest('.mod').remove();$('#dr').classList.remove('on')">✕ Закрити</button><h2 style="margin:14px 0 4px">${r.e} ${I(id).n}</h2><p class=sub>Натисни на предмет, щоб відкрити, де його брати.</p>
+function graph(id){$('#dr').classList.remove('on');document.querySelectorAll('.mod').forEach(m=>m.remove());const r=R(id);if(!r)return toast('Рецепт не знайдено');const tc=cost(r);const d=document.createElement('div');d.className='mod';d.innerHTML=`<div><button class=go onclick="this.closest('.mod').remove();$('#dr').classList.remove('on')">✕ Закрити</button><h2 style="margin:14px 0 4px">${r.e} ${I(id).n}</h2><p class=sub>Натисни на предмет, щоб відкрити, де його брати.</p>
 <div class=k><div class=w><b>${$$(tc)}</b><span>Сировина цикл</span></div><div><b>${$$(unit(r))}</b><span>Собівартість/шт</span></div><div><b>${T(r.t)}</b><span>Час крафту</span></div><div><b>1</b><span>Етап · Вм.${r.sk} · ${r.xp} Exp</span></div></div>
 <div class=sc><div class=gr><svg class=s></svg><div class=col>${M(r.ing,([i,q],n)=>{const x=I(i);return`<div class="nd in" onclick="info('${i}')" onmouseenter="hl(${n})" onmouseleave="hl()"><b>${x.e} ${x.n}</b><small>×${q} · склад ${f(x.q)} · ${$$(x.p)}/шт</small><small class=hint>📌 ${(x.w||'натисни, щоб побачити').split('\n')[0].slice(0,34)}</small></div>`})}</div>
 <div class="nd rc" id=rc onmouseenter="hl('z')" onmouseleave="hl()"><b>⚙ Рецепт</b><small>Вихід ${r.out} шт за ${T(r.t)}</small><small>Цикл ${$$(tc)} · одиниця ${$$(unit(r))}</small>${M(r.ing,([i,q])=>`<small>${I(i).e} ${q} × ${$$(I(i).p)} = ${$$(q*I(i).p)}</small>`)}</div>
@@ -114,5 +141,5 @@ if(k==4||k==12)ns(t,.14,.35,'bandpass',1800);if(k%2==0)ns(t,.04,.1,'highpass',70
 function music(){if(!AC){AC=new AudioContext;NB=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;ma=AC.createGain();ma.gain.value=.3;const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2600;const dl=AC.createDelay(),fb=AC.createGain();dl.delayTime.value=.38;fb.gain.value=.4;ma.connect(lp);lp.connect(AC.destination);lp.connect(dl);dl.connect(fb);fb.connect(dl);dl.connect(AC.destination)}
 on=!on;if(on){AC.resume();nt=AC.currentTime+.1;tm=setInterval(()=>{while(nt<AC.currentTime+.3){step(sx++,nt);nt+=.2}},80)}else{clearInterval(tm);AC.suspend()}$('#mu').textContent=on?'🔊':'🔇'}
 setInterval(()=>{document.querySelectorAll('[data-end]').forEach(e=>{const s=(e.dataset.end-Date.now())/1000;if(e.tagName=='I')e.style.width=Math.min(100,(Date.now()-e.dataset.st)/(e.dataset.end-e.dataset.st)*100)+'%';else if(s<=0)tab(cur);else e.textContent=T(s)})},1000);setInterval(()=>pull(0),30000);
-tab('home');pull(1);
+localStorage.ul=JSON.stringify(D);tab('home');pull(1);
 </script></body></html>
